@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Command Interface</title>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Roboto', sans-serif;
+            background-color: #f0f8ff;
+            color: #333;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            flex-direction: column;
+        }
+        h1 {
+            color: #0056b3;
+            font-weight: 500;
+        }
+        #controlPanel {
+            background-color: #ffffff;
+            border: 1px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            transition: transform 0.3s;
+        }
+        #controlPanel:hover {
+            transform: scale(1.05);
+        }
+        button {
+            background: linear-gradient(45deg, #0056b3, #004494);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 10px 20px;
+            margin: 10px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            transition: background 0.3s, transform 0.3s;
+        }
+        button:hover {
+            background: linear-gradient(45deg, #004494, #003366);
+            transform: scale(1.1);
+        }
+        #responseText {
+            margin-top: 20px;
+            font-size: 18px;
+            background-color: #e0f7fa;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #b2ebf2;
+            color: #00796b;
+            transition: background-color 0.3s, transform 0.3s;
+        }
+        #responseText:empty {
+            transform: scale(0.8);
+            opacity: 0.5;
+        }
+        #audioPlayer {
+            margin-top: 20px;
+        }
+        #progressBarContainer {
+            width: 100%;
+            background-color: #e0e0e0;
+            border-radius: 8px;
+            margin-top: 20px;
+            overflow: hidden;
+        }
+        #progressBar {
+            width: 0%;
+            height: 24px;
+            background-color: #0056b3;
+            border-radius: 8px;
+            transition: width 0.3s ease-in-out; /* Smooth transition */
+        }
+        #progressBar.complete {
+            background-color: #4caf50;
+        }
+        .microphone {
+            width: 50px;
+            height: 50px;
+            margin: 10px auto;
+            background: url('https://upload.wikimedia.org/wikipedia/commons/3/3c/Microphone_icon.svg') no-repeat center;
+            background-size: contain;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.1);
+            }
+            100% {
+                transform: scale(1);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="controlPanel">
+        <h1>Voice Command Interface</h1>
+        <div class="microphone" id="micIcon" style="display: none;"></div>
+        <button id="listenButton">Start Listening</button>
+        <div id="responseText"></div>
+        <div id="progressBarContainer">
+            <div id="progressBar"></div>
+        </div>
+        <audio id="audioPlayer" controls style="display: none;">
+            <source src="" type="audio/mpeg">
+            Your browser does not support the audio element.
+        </audio>
+    </div>
+
+    <script>
+        $(document).ready(function() {
+            let currentState = 0; // Initial state
+            let currentAudio = null;
+
+            $("#listenButton").click(function() {
+                // Handle button click based on current state
+                switch (currentState) {
+                    case 0: // Initial state
+                        chooseDomain();
+                        break;
+                    case 1: // Domain chosen
+                        startListening();
+                        break;
+                    default:
+                        break;
+                }
+            });
+
+            async function chooseDomain() {
+                try {
+                    await updateProgressBar(10); // Initial progress
+                    await say("Please choose a domain: 'Repair' or 'Health'");
+                    let domainChoice = await listenForDomain();
+
+                    if (domainChoice === "repair" || domainChoice === "health") {
+                        let response = await fetch('/api/choose_domain/', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ domain: domainChoice })
+                        });
+
+                        if (response.ok) {
+                            await say("Domain chosen: " + domainChoice);
+                            await updateProgressBar(30); // Progress to 30% after domain selection
+                            currentState = 1; // Update state to indicate domain chosen
+                        } else {
+                            throw new Error('Domain choice was not ok.');
+                        }
+                    } else {
+                        await say("Invalid choice. Please choose 'Repair' or 'Health'.");
+                    }
+                } catch (error) {
+                    console.error('Error in chooseDomain:', error);
+                }
+            }
+
+            async function startListening() {
+                try {
+                    $('#responseText').text('Listening for your command...');
+                    $('#micIcon').show();
+                    await updateProgressBar(40); // Progress to 40% when starting to listen
+                    await say("Listening...");
+
+                    const startTime = new Date().getTime(); // Start time
+
+                    let response = await fetch('/api/listen/', {
+                        method: 'GET'
+                    });
+
+                    const endTime = new Date().getTime(); // End time
+                    const duration = endTime - startTime; // Duration in milliseconds
+
+                    if (response.ok) {
+                        let result = await response.json();
+                        console.log('Response from /api/listen:', result); // Debugging: log the response
+                        displayResponseText(result.message, result.command); // Display recognized user command and response text
+
+                        await incrementProgressBar(duration); // Increment the progress bar based on duration
+
+                        if (result.audio) {
+                            playAudio(result.audio);
+                        }
+                    } else {
+                        throw new Error('Network response was not ok.');
+                    }
+                } catch (error) {
+                    console.error('Error in startListening:', error);
+                    $('#responseText').text('Error occurred while processing the command.');
+                } finally {
+                    await updateProgressBar(100); // Progress to 100% after processing the user's output
+                    $('#micIcon').hide();
+                }
+            }
+
+            function displayResponseText(response, command) {
+                $('#responseText').html(`User Command: ${command ? command : 'N/A'}<br>Response: ${response}`);
+            }
+
+            function playAudio(url) {
+                if (currentAudio) {
+                    currentAudio.pause();
+                }
+                currentAudio = new Audio(url);
+                currentAudio.play();
+            }
+
+            async function say(text) {
+                try {
+                    let response = await fetch('/api/say/', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ text: text })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Speech synthesis failed.');
+                    }
+                } catch (error) {
+                    console.error('Error during speech synthesis:', error);
+                }
+            }
+
+            async function listenForDomain() {
+                try {
+                    let response = await fetch('/api/listen/', {
+                        method: 'GET'
+                    });
+
+                    if (response.ok) {
+                        let result = await response.json();
+                        return result.domainChoice.toLowerCase();
+                    } else {
+                        throw new Error('Listening for domain choice failed. Status: ' + response.status);
+                    }
+                } catch (error) {
+                    console.error('Error in listenForDomain:', error);
+                    throw error; // Rethrow the error for higher level handling
+                }
+            }
+
+            async function updateProgressBar(percentage) {
+                console.log('Updating progress bar to:', percentage + '%');
+                $('#progressBar').css('width', percentage + '%');
+                if (percentage === 100) {
+                    $('#progressBar').addClass('complete');
+                } else {
+                    $('#progressBar').removeClass('complete');
+                }
+                return new Promise(resolve => setTimeout(resolve, 500)); // Ensure the progress bar visually updates
+            }
+
+            async function incrementProgressBar(duration) {
+                const increment = 10; // Update the progress bar every 10ms
+                const totalSteps = duration / increment;
+                let step = 0;
+
+                return new Promise(resolve => {
+                    const interval = setInterval(() => {
+                        step++;
+                        const percentage = Math.min((step / totalSteps) * 60, 60); // Cap at 60% for intermediate state
+                        $('#progressBar').css('width', percentage + '%');
+
+                        if (percentage >= 60) {
+                            clearInterval(interval);
+                            resolve();
+                        }
+                    }, increment);
+                });
+            }
+        });
+    </script>
+</body>
+</html>

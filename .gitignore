@@ -1,0 +1,22 @@
+# Ignore Python virtual environments
+venv/
+myenv/
+
+# Ignore database files
+db.sqlite3
+
+# Ignore compiled files and caches
+__pycache__/
+*.pyc
+*.pyo
+
+# Ignore VS Code settings
+.vscode/
+
+# Ignore system files (macOS)
+.DS_Store
+
+# Ignore media/output files
+*.mp3
+files/
+
